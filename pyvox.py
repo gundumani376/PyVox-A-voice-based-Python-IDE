@@ -275,6 +275,8 @@ def mainapp():
     )
     micbutton.place(relx=0.5, rely=0.97, anchor=tk.CENTER)
 
+
+
     mainwindow.mainloop()
 
 splash = tk.Tk()
