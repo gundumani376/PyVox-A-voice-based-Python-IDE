@@ -3,12 +3,36 @@ import time
 from tkinter import ttk
 from tkinter import messagebox
 from PIL import Image, ImageTk
+import os
+import sys
 
 def mainapp():
     splash.destroy()
     mainwindow = tk.Tk()
     mainwindow.title("PyVox")
     mainwindow.geometry("1100x800")
+    mainwindow.configure(bg="#070707")
+
+    toolbar=tk.Frame(mainwindow, bg="#070707", bd=0)
+    toolbar.pack(side=tk.TOP, fill=tk.X)
+
+    whitearea=tk.Frame(mainwindow, bg="#FAF7F7", width=1100, height=100)
+    whitearea.place(x=0,y=800-100)
+    whitearea.pack_propagate(False)
+
+    runbutton=tk.Button(
+        toolbar,
+        text="Run",
+        command=lambda: messagebox.showinfo("Run"),
+        bg="#070707",
+        fg="white",
+        activebackground="#080808",
+        relief="flat",
+        padx=10,
+        pady=5
+    )
+
+    runbutton.pack(side=tk.LEFT, padx=5)
 
     mic_img = Image.open("mic.png")
     mic_img = mic_img.resize((50, 50), Image.LANCZOS)  
@@ -27,7 +51,7 @@ def mainapp():
         padx=5,  
         pady=5   
     )
-    micbutton.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
+    micbutton.place(relx=0.5, rely=0.97, anchor=tk.CENTER)
 
     mainwindow.mainloop()
 
