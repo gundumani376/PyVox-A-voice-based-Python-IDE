@@ -7,6 +7,7 @@ import code
 from io import StringIO
 import io
 import importlib
+import threading
 
 def mainapp():
     splash.destroy()
@@ -29,6 +30,20 @@ def mainapp():
     console=code.InteractiveConsole(locals=console_vars)
     terminal_area.insert(tk.END, ">>> ")
     terminal_area.config(state=tk.NORMAL)
+
+    def voiceactivation():
+        import pyttsx3
+        engine=pyttsx3.init()
+        mainmodule=importlib.import_module("main")
+        while True:
+            try:
+                wakeword=mainmodule.recognizespeech()
+                if wakeword and wakeword.lower().strip()=="python":
+                    engine.say("I'm listening")
+                    engine.runAndWait()
+            except Exception as e:
+                print(f"Voice activation error: {e}")        
+    threading.Thread(target=voiceactivation,daemon=True).start()
 
     def microphonecommand():
         import pyttsx3
