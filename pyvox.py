@@ -33,6 +33,7 @@ def mainapp():
 
     def voiceactivation():
         import pyttsx3
+        import re
         engine=pyttsx3.init()
         mainmodule=importlib.import_module("main")
         while True:
@@ -41,15 +42,35 @@ def mainapp():
                 if wakeword and wakeword.lower().strip()=="python":
                     engine.say("I'm listening")
                     engine.runAndWait()
-                    inputspeech=mainmodule.recognizespeech()
-                    if inputspeech:
-                        response=mainmodule.geminiresponse(inputspeech)
-                        if response:
+                    query=mainmodule.recognizespeech()
+                    if query:
+                        keywords=["code", "program", "write", "script", "function", "class", "method", "generate"]
+                        if any(word in query.lower() for word in keywords):
+                            code_response=mainmodule.geminiresponse(query)
+                            code_blocks=re.findall(r'```(?:\w*\n)?(.*?)```', code_response, re.DOTALL)
+                            code=code_blocks[0].strip() if code_blocks else code_response.strip()
+                            def insert_code():
+                                text_area.delete(1.0, tk.END)
+                                text_area.insert(tk.END, code)
+                            mainwindow.after(0, insert_code)
+                            engine.say("Code has been written in the editor.")
+                            engine.runAndWait()
+                        else:
+                            response=mainmodule.geminiresponse(query)
+                            def open_chat_and_respond():
+                                chat_dialog=tk.Toplevel(mainwindow)
+                                chat_dialog.title("Chat with Gemini")
+                                chat_dialog.geometry("700x500")
+                                chat_dialog.configure(bg="#070707")
+                                tk.Label(chat_dialog, text="Gemini Chat", bg="#070707", fg="white", font=("Courier", 14)).pack(pady=5)
+                                chat_history=tk.Text(chat_dialog, height=20, bg="#2E2E2E", fg="white", font=("Courier", 12), wrap="word", state=tk.NORMAL)
+                                chat_history.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
+                                chat_history.insert(tk.END, f"You: {query}\n")
+                                chat_history.insert(tk.END, f"Gemini: {response}\n\n")
+                                chat_history.config(state=tk.DISABLED)
+                            mainwindow.after(0, open_chat_and_respond)
                             engine.say(response)
-                continueresponse=mainmodule.recognizespeech()
-                if continueresponse and "exit" in continueresponse.lower():
-                    engine.say("Goodbye")
-                    break            
+                            engine.runAndWait()
             except Exception as e:
                 print(f"Voice activation error: {e}")        
     threading.Thread(target=voiceactivation,daemon=True).start()
@@ -73,10 +94,15 @@ def mainapp():
                         if code and code!="No code found":
                             text_area.delete(1.0, tk.END)
                             text_area.insert(tk.END, code)
+                            engine.say("Code has been written in the editor.")
+                            engine.runAndWait()
                         else:
                             messagebox.showinfo("Info", "No code found in Gemini response.")
                     else:
-                        messagebox.showinfo("Info", "Your query does not appear to be a coding request.")
+                        response=mainmodule.geminiresponse(query)
+                        engine.say(response)
+                        engine.runAndWait()
+                        messagebox.showinfo("Gemini Response", response)
                 else:
                     messagebox.showinfo("Info", "No speech detected.")
             else:
@@ -92,16 +118,13 @@ def mainapp():
                 chat_dialog.title("Chat with Gemini")
                 chat_dialog.geometry("700x500")
                 chat_dialog.configure(bg="#070707")
-                
                 tk.Label(chat_dialog, text="Gemini Chat", bg="#070707", fg="white", font=("Courier", 14)).pack(pady=5)
                 chat_history=tk.Text(chat_dialog, height=20, bg="#2E2E2E", fg="white", font=("Courier", 12), wrap="word", state=tk.DISABLED)
                 chat_history.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
-
                 input_frame=tk.Frame(chat_dialog, bg="#070707")
                 input_frame.pack(fill=tk.X, padx=10, pady=10)
                 user_input=tk.Entry(input_frame, font=("Courier", 12), bg="#2E2E2E", fg="white", insertbackground="white")
                 user_input.pack(side=tk.LEFT, fill=tk.X, expand=True)
-                
                 def submit_query(event=None):
                     query=user_input.get().strip()
                     if query:
@@ -121,8 +144,7 @@ def mainapp():
                             chat_history.insert(tk.END, "Gemini: No response.\n\n")
                             chat_history.config(state=tk.DISABLED)
                             chat_history.see(tk.END)
-                    return "break"  # Prevent default behavior
-
+                    return "break"
                 send_button=tk.Button(input_frame, text="Send", command=submit_query, bg="#2E2E2E", fg="white", activebackground="#3E3E3E", relief="flat", padx=10, pady=5)
                 send_button.pack(side=tk.RIGHT, padx=5)
                 user_input.bind("<Return>", submit_query)
