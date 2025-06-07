@@ -1,18 +1,21 @@
-import speech_recognition as sr
 import pyttsx3
 import requests
 import time
 import re
 
 def recognizespeech():
+    import speech_recognition as sr
     recognizer=sr.Recognizer()
     with sr.Microphone() as source:
         print("Listening...")
-        audio=recognizer.listen(source, timeout=5)
         try:
+            audio=recognizer.listen(source, timeout=5)
             text=recognizer.recognize_google(audio)
             print("You said: "+ text)
             return text
+        except sr.WaitTimeoutError:
+            print("Listening timed out, no speech detected.")
+            return None
         except sr.UnknownValueError:
             print("Sorry, I did not understand that.")
             return None
@@ -20,16 +23,19 @@ def recognizespeech():
             print("Error with speech recognition service; {0}".format(e))
             return None
 
-def geminiresponse(text):
+def geminiresponse(text, code_only=False):
     try:
-        r=requests.post(
+        prompt = text
+        if code_only:
+            prompt = f"Only print the code for this request, no explanation or extra text: {text}"
+        r = requests.post(
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=AIzaSyBwepEkfaQqeTrKKhJuERytq-S2SLLl2Uk",
-            json={"contents": [{"parts":[{"text":f"Only print the code for this request, no explanation or extra text: {text}"}]}],
+            json={"contents": [{"parts":[{"text": prompt}]}],
                   "generationConfig":{"maxOutputTokens":2048,"temperature":0.7}},
             headers={"Content-Type":"application/json"}
         )
         r.raise_for_status()
-        response_text=r.json().get("candidates", [{}])[0].get("content",{}).get("parts",[{}])[0].get("text","No response")
+        response_text = r.json().get("candidates", [{}])[0].get("content",{}).get("parts",[{}])[0].get("text","No response")
         
         # Check if the input contains "write a program"
         if "write a program" in text.lower():

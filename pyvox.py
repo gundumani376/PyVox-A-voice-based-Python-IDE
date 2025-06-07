@@ -41,6 +41,15 @@ def mainapp():
                 if wakeword and wakeword.lower().strip()=="python":
                     engine.say("I'm listening")
                     engine.runAndWait()
+                    inputspeech=mainmodule.recognizespeech()
+                    if inputspeech:
+                        response=mainmodule.geminiresponse(inputspeech)
+                        if response:
+                            engine.say(response)
+                continueresponse=mainmodule.recognizespeech()
+                if continueresponse and "exit" in continueresponse.lower():
+                    engine.say("Goodbye")
+                    break            
             except Exception as e:
                 print(f"Voice activation error: {e}")        
     threading.Thread(target=voiceactivation,daemon=True).start()
@@ -74,6 +83,53 @@ def mainapp():
                 messagebox.showerror("Error", "main.py does not have the required functions.")
         except Exception as e:
             messagebox.showerror("Error", f"Microphone command failed:\n{e}")
+
+    def chat_with_gemini():
+        try:
+            mainmodule=importlib.import_module("main")
+            if hasattr(mainmodule, "geminiresponse"):
+                chat_dialog=tk.Toplevel(mainwindow)
+                chat_dialog.title("Chat with Gemini")
+                chat_dialog.geometry("700x500")
+                chat_dialog.configure(bg="#070707")
+                
+                tk.Label(chat_dialog, text="Gemini Chat", bg="#070707", fg="white", font=("Courier", 14)).pack(pady=5)
+                chat_history=tk.Text(chat_dialog, height=20, bg="#2E2E2E", fg="white", font=("Courier", 12), wrap="word", state=tk.DISABLED)
+                chat_history.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
+
+                input_frame=tk.Frame(chat_dialog, bg="#070707")
+                input_frame.pack(fill=tk.X, padx=10, pady=10)
+                user_input=tk.Entry(input_frame, font=("Courier", 12), bg="#2E2E2E", fg="white", insertbackground="white")
+                user_input.pack(side=tk.LEFT, fill=tk.X, expand=True)
+                
+                def submit_query(event=None):
+                    query=user_input.get().strip()
+                    if query:
+                        chat_history.config(state=tk.NORMAL)
+                        chat_history.insert(tk.END, f"You: {query}\n")
+                        chat_history.config(state=tk.DISABLED)
+                        chat_history.see(tk.END)
+                        user_input.delete(0, tk.END)
+                        response=mainmodule.geminiresponse(query)
+                        if response:
+                            chat_history.config(state=tk.NORMAL)
+                            chat_history.insert(tk.END, f"Gemini: {response}\n\n")
+                            chat_history.config(state=tk.DISABLED)
+                            chat_history.see(tk.END)
+                        else:
+                            chat_history.config(state=tk.NORMAL)
+                            chat_history.insert(tk.END, "Gemini: No response.\n\n")
+                            chat_history.config(state=tk.DISABLED)
+                            chat_history.see(tk.END)
+                    return "break"  # Prevent default behavior
+
+                send_button=tk.Button(input_frame, text="Send", command=submit_query, bg="#2E2E2E", fg="white", activebackground="#3E3E3E", relief="flat", padx=10, pady=5)
+                send_button.pack(side=tk.RIGHT, padx=5)
+                user_input.bind("<Return>", submit_query)
+            else:
+                messagebox.showerror("Error", "main.py does not have the geminiresponse function.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Chat failed:\n{e}")
 
     def handle_terminal_input(event):
         if event.keysym=="Return":
@@ -186,6 +242,8 @@ def mainapp():
     open_file_button.pack(side=tk.LEFT, padx=5)
     new_file_button=tk.Button(toolbar, text="New File", command=create_new_file, bg="#2E2E2E", fg="white", activebackground="#3E3E3E", relief="flat", padx=10, pady=5)
     new_file_button.pack(side=tk.LEFT, padx=5)
+    chat_button=tk.Button(toolbar, text="Chat", command=chat_with_gemini, bg="#2E2E2E", fg="white", activebackground="#3E3E3E", relief="flat", padx=10, pady=5)
+    chat_button.pack(side=tk.LEFT, padx=5)
     about_button=tk.Button(toolbar, text="About", command=lambda: messagebox.showinfo("About", "PyVox - A simple voice app\nVersion 1.0"), bg="#2E2E2E", fg="white", activebackground="#3E3E3E", relief="flat", padx=10, pady=5)
     about_button.pack(side=tk.LEFT, padx=5)
     mic_img=Image.open("mic.png")
