@@ -9,6 +9,7 @@ import sys
 from io import StringIO
 import code
 import io
+import importlib
 
 def mainapp():
     splash.destroy()
@@ -63,6 +64,36 @@ def mainapp():
     console = code.InteractiveConsole(locals=console_vars)
     terminal_area.insert(tk.END, ">>> ")
     terminal_area.config(state=tk.NORMAL)
+
+    def microphonecommand():
+        import pyttsx3
+        engine = pyttsx3.init()
+        engine.say("Please speak")
+        engine.runAndWait()
+        try:
+            mainmodule = importlib.import_module("main")
+            if hasattr(mainmodule, "recognizespeech") and hasattr(mainmodule, "geminiresponse"):
+                query = mainmodule.recognizespeech()
+                if query:
+                    keywords = ["code", "program", "write", "script", "function", "class", "method", "generate"]
+                    if any(word in query.lower() for word in keywords):
+                        code_response = mainmodule.geminiresponse(query)
+                        import re
+                        code_blocks = re.findall(r'```(?:\w*\n)?(.*?)```', code_response, re.DOTALL)
+                        code = code_blocks[0].strip() if code_blocks else code_response.strip()
+                        if code and code != "No code found":
+                            text_area.delete(1.0, tk.END)
+                            text_area.insert(tk.END, code)
+                        else:
+                            messagebox.showinfo("Info", "No code found in Gemini response.")
+                    else:
+                        messagebox.showinfo("Info", "Your query does not appear to be a coding request.")
+                else:
+                    messagebox.showinfo("Info", "No speech detected.")
+            else:
+                messagebox.showerror("Error", "main.py does not have the required functions.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Microphone command failed:\n{e}")
 
     def handle_terminal_input(event):
         if event.keysym == "Return":
@@ -265,7 +296,7 @@ def mainapp():
     micbutton = tk.Button(
         mainwindow,
         image=micimage,
-        command=lambda: messagebox.showinfo("Microphone", "Speak now!"),
+        command=microphonecommand,
         bg="#070707",
         fg="white",
         activebackground="#080808",
