@@ -132,8 +132,7 @@ class VoicePythonIDE:
         )
         self.voice_status_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
-        self.add_chat_message("Assistant", "Hello! I'm your AI coding assistant. I can help you write code, run files, and answer programming questions. Try voice commands like 'write a hello world program' or 'run the file'.")
-        
+        self.add_chat_message("Assistant", "Hello! I'm your AI coding assistant. ")
     def setup_voice_recognition(self):
         try:
             with self.microphone as source:
@@ -258,12 +257,7 @@ class VoicePythonIDE:
             self.voice_status_label.config(text="Voice: Listening", foreground="green")
 
             threading.Thread(target=self.continuous_voice_recognition, daemon=True).start()
-            self.voice_status_text.insert(tk.END, "Voice recognition started. Say commands like:\n")
-            self.voice_status_text.insert(tk.END, "- 'write a hello world program'\n")
-            self.voice_status_text.insert(tk.END, "- 'run the file'\n")
-            self.voice_status_text.insert(tk.END, "- 'save the file'\n")
-            self.voice_status_text.insert(tk.END, "- 'clear terminal'\n\n")
-    
+            self.voice_status_text.insert(tk.END, "Voice recognition started.\n")
     def stop_voice_recognition(self):
         self.is_listening = False
         self.start_voice_btn.config(state=tk.NORMAL)
