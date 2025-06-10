@@ -10,6 +10,9 @@ import importlib
 import threading
 import re
 
+# Global variable to hold AI response thread (optional, for tracking if needed)
+ai_response_thread = None
+
 def mainApp():
     splash.destroy()
     mainWindow = tk.Tk()
@@ -159,15 +162,15 @@ def mainApp():
 
     def processCommand(query, fromVoice=False):
         queryLower = query.lower().strip()
-        feedback = ""
         
-        # Add command to chat
+        # Add command to chat immediately
         sender = "Voice" if fromVoice else "User"
-        addChatMessage(sender, query)
+        mainWindow.after(0, lambda: addChatMessage(sender, query))
         
+        # Immediate commands (no AI interaction, but feedback might need voice)
         if "run the code" in queryLower or "execute code" in queryLower:
             runCode()
-            feedback = "Running the code."
+            return "Running the code."
         elif "open saajan" in queryLower:
             search_path = os.path.expanduser("~")
             filePath = search_file("saajan.py", search_path)
@@ -175,167 +178,189 @@ def mainApp():
                 try:
                     with open(filePath, 'r') as f:
                         content = f.read()
-                    textArea.delete(1.0, tk.END)
-                    textArea.insert(tk.END, content)
+                    mainWindow.after(0, lambda: textArea.delete(1.0, tk.END))
+                    mainWindow.after(0, lambda: textArea.insert(tk.END, content))
                     currentFile[0] = filePath
-                    feedback = "File saajan.py opened."
+                    return "File saajan.py opened."
                 except Exception as e:
-                    feedback = f"Failed to open file: {str(e)}"
+                    return f"Failed to open file: {str(e)}"
             else:
-                feedback = "File saajan.py not found on your computer."
+                return "File saajan.py not found on your computer."
         elif "open" in queryLower and "file" in queryLower:
             match = re.search(r'open\s+(.+?)\s+file', queryLower, re.IGNORECASE)
             if match:
                 fileName = match.group(1).strip()
-                filePath = fileName if os.path.exists(fileName) else filedialog.askopenfilename(filetypes=[("Python files", "*.py"), ("All files", "*.*")], initialfile=fileName)
+                # Use a lambda to defer file dialog to the main thread
+                filePath = mainWindow.tk.call("tk::getOpenFile", "-filetypes", "{{Python files} {.py}} {{All files} {.*}}", "-initialfile", fileName)
+                
                 if filePath:
                     try:
                         with open(filePath, 'r') as f:
                             content = f.read()
-                        textArea.delete(1.0, tk.END)
-                        textArea.insert(tk.END, content)
+                        mainWindow.after(0, lambda: textArea.delete(1.0, tk.END))
+                        mainWindow.after(0, lambda: textArea.insert(tk.END, content))
                         currentFile[0] = filePath
-                        feedback = f"File {fileName} opened."
+                        return f"File {fileName} opened."
                     except Exception as e:
-                        feedback = f"Failed to open file: {str(e)}"
+                        return f"Failed to open file: {str(e)}"
                 else:
-                    feedback = "No file selected."
+                    return "No file selected."
             else:
-                feedback = "Please specify a valid file name."
+                return "Please specify a valid file name."
         elif "rewrite line number" in queryLower:
-            match = re.search(r'rewrite line number (\d+)', queryLower, re.IGNORECASE)
+            match = re.search(r'rewrite line number (\d+)(?: to\s+(.*))?', queryLower, re.IGNORECASE) # Added non-capturing group for 'to'
             if match:
                 lineNum = int(match.group(1))
-                newContentMatch = re.search(r'to\s+(.+)', queryLower, re.IGNORECASE)
-                newContent = newContentMatch.group(1).strip() if newContentMatch else ""
+                newContent = match.group(2).strip() if match.group(2) else "" # Get the new content
                 lines = textArea.get(1.0, tk.END).split('\n')
                 if 1 <= lineNum <= len(lines):
                     lines[lineNum - 1] = newContent
-                    textArea.delete(1.0, tk.END)
-                    textArea.insert(tk.END, '\n'.join(lines).rstrip('\n'))
-                    updateLineNumbersText()
-                    feedback = f"Line {lineNum} has been rewritten."
+                    mainWindow.after(0, lambda: textArea.delete(1.0, tk.END))
+                    mainWindow.after(0, lambda: textArea.insert(tk.END, '\n'.join(lines).rstrip('\n')))
+                    mainWindow.after(0, updateLineNumbersText)
+                    return f"Line {lineNum} has been rewritten."
                 else:
-                    feedback = f"Line number {lineNum} is out of range."
+                    return f"Line number {lineNum} is out of range."
             else:
-                feedback = "Please specify a valid line number."
+                return "Please specify a valid line number and optionally the new content."
         elif "save the file" in queryLower:
             if saveFile():
-                feedback = "File saved successfully."
+                return "File saved successfully."
             else:
-                feedback = "Failed to save file."
+                return "Failed to save file."
         elif "clear code" in queryLower or "clear editor" in queryLower:
-            textArea.delete(1.0, tk.END)
-            feedback = "Code editor cleared."
+            mainWindow.after(0, lambda: textArea.delete(1.0, tk.END))
+            return "Code editor cleared."
         elif "close pyvox" in queryLower:
-            mainWindow.destroy()
-            feedback = "Closing PyVox."
+            mainWindow.after(0, mainWindow.destroy)
+            return "Closing PyVox."
         else:
-            # Check for code-related keywords
-            keyWords = ["code", "program", "write", "script", "function", "class", "method", "generate", "create"]
-            try:
-                mainModule = importlib.import_module("main")
-                if any(word in queryLower for word in keyWords):
-                    # Generate code and display in editor
-                    if hasattr(mainModule, "geminiResponse"):
-                        codeResponse = mainModule.geminiResponse(query)
-                        codeBlocks = re.findall(r'```(?:\w*\n)?(.*?)```', codeResponse, re.DOTALL)
-                        if codeBlocks:
-                            code = codeBlocks[0].strip()
-                            textArea.delete(1.0, tk.END)
-                            textArea.insert(tk.END, code)
-                            feedback = "Code has been generated and added to the editor."
-                            displayOutput("Code generated successfully. Click 'Run' to execute.")
-                        else:
-                            # If no code blocks, treat as regular response
-                            textArea.delete(1.0, tk.END)
-                            textArea.insert(tk.END, codeResponse.strip())
-                            feedback = "Response has been written in the editor."
-                    else:
-                        feedback = "Code generation not available. Please check main.py file."
-                else:
-                    # Regular chat response
-                    if hasattr(mainModule, "geminiResponse"):
-                        response = mainModule.geminiResponse(query)
-                        feedback = response
-                    else:
-                        feedback = "AI response not available. Please check main.py file."
-            except ImportError:
-                feedback = "main.py module not found. Please ensure it exists and contains geminiResponse function."
-            except Exception as e:
-                feedback = f"Error processing command: {str(e)}"
-        
-        # Add AI response to chat
-        addChatMessage("AI", feedback)
-        return feedback
+            # Signal that AI processing is needed
+            return "AI_PROCESSING" 
 
-    def voiceActivation():
-        try:
-            import pyttsx3
-            engine = pyttsx3.init()
-            # Set voice properties
-            voices = engine.getProperty('voices')
-            if voices:
-                engine.setProperty('voice', voices[0].id)  # Use first available voice
-            engine.setProperty('rate', 150)  # Adjust speech rate
-        except ImportError:
-            print("pyttsx3 not available. Voice feedback disabled.")
-            engine = None
-        
+    def _process_ai_command_in_thread(query, fromVoice, engine=None): # Added engine as an argument
+        # This function runs in a separate thread for AI interaction
+        feedback = ""
         mainModule = None
         try:
             mainModule = importlib.import_module("main")
-            if not hasattr(mainModule, "recognizeSpeech"):
-                print("main.py does not have recognizeSpeech function")
-                mainModule = None
-        except ImportError:
-            print("main.py module not found for voice recognition")
-        
-        while True:
-            try:
-                if mainModule and hasattr(mainModule, "recognizeSpeech"):
-                    # Update status
-                    mainWindow.after(0, lambda: voiceStatusLabel.config(text="🎤 Voice: Listening", fg="#00ff00"))
-                    
-                    wakeWord = mainModule.recognizeSpeech()
-                    if wakeWord and wakeWord.lower().strip() == "python":
-                        # Update status
-                        mainWindow.after(0, lambda: voiceStatusLabel.config(text="🎤 Voice: Activated", fg="#ffff00"))
-                        
-                        if engine:
-                            engine.say("I'm listening")
-                            engine.runAndWait()
-                        
-                        query = mainModule.recognizeSpeech()
-                        if query:
-                            def processVoiceCommand():
-                                feedback = processCommand(query, fromVoice=True)
-                                if feedback and "close pyvox" not in query.lower():
-                                    if engine:
-                                        engine.say(feedback)
-                                        engine.runAndWait()
-                                # Reset status
-                                voiceStatusLabel.config(text="🎤 Voice: Listening", fg="#00ff00")
-                            
-                            mainWindow.after(0, processVoiceCommand)
+            if not hasattr(mainModule, "geminiResponse"):
+                feedback = "main.py module not found or does not contain geminiResponse function."
+            else:
+                queryLower = query.lower().strip()
+                keyWords = ["code", "program", "write", "script", "function", "class", "method", "generate", "create"]
+                if any(word in queryLower for word in keyWords):
+                    codeResponse = mainModule.geminiResponse(query)
+                    codeBlocks = re.findall(r'```(?:\w*\n)?(.*?)```', codeResponse, re.DOTALL)
+                    if codeBlocks:
+                        code = codeBlocks[0].strip()
+                        mainWindow.after(0, lambda: textArea.delete(1.0, tk.END))
+                        mainWindow.after(0, lambda: textArea.insert(tk.END, code))
+                        feedback = "Code has been generated and added to the editor."
+                        mainWindow.after(0, lambda: displayOutput("Code generated successfully. Click 'Run' to execute."))
+                    else:
+                        # If no code blocks, treat as regular response
+                        mainWindow.after(0, lambda: textArea.delete(1.0, tk.END))
+                        mainWindow.after(0, lambda: textArea.insert(tk.END, codeResponse.strip()))
+                        feedback = "Response has been written in the editor."
                 else:
-                    time.sleep(1)  # Wait before retrying if module not available
+                    response = mainModule.geminiResponse(query)
+                    feedback = response
+        except ImportError:
+            feedback = "main.py module not found. Please ensure it exists."
+        except Exception as e:
+            feedback = f"Error processing AI command: {str(e)}"
+        
+        # Schedule GUI update back on the main thread
+        mainWindow.after(0, lambda: addChatMessage("AI", feedback))
+        
+        # Provide voice feedback for AI response if from voice command
+        if fromVoice and engine and "close pyvox" not in query.lower():
+            try:
+                engine.say(feedback)
+                engine.runAndWait()
             except Exception as e:
-                print(f"Voice activation error: {e}")
-                time.sleep(1)
+                print(f"Error speaking AI feedback: {e}")
 
-    # Start voice activation in background thread
-    voiceThread = threading.Thread(target=voiceActivation, daemon=True)
-    voiceThread.start()
 
     def handleChatInput(event):
         command = chatInput.get().strip()
         if command:
             chatInput.delete(0, tk.END)
-            feedback = processCommand(command, fromVoice=False)
+            # Process immediate commands first
+            result = processCommand(command, fromVoice=False)
+            if result == "AI_PROCESSING":
+                # If AI processing is needed, offload to a thread
+                threading.Thread(target=_process_ai_command_in_thread, args=(command, False), daemon=True).start()
+            else:
+                # For immediate commands, update chat directly
+                mainWindow.after(0, lambda: addChatMessage("AI", result))
         return "break"
 
     chatInput.bind("<Return>", handleChatInput)
+
+    def voiceActivation():
+        global ai_response_thread
+        import pyttsx3
+        import time
+        import importlib
+
+        try:
+            engine = pyttsx3.init()
+            voices = engine.getProperty('voices')
+            if voices:
+                engine.setProperty('voice', voices[0].id)
+            engine.setProperty('rate', 150)
+        except ImportError:
+            print("pyttsx3 not available.")
+            engine = None
+
+        try:
+            mainModule = importlib.import_module("main")
+            if not hasattr(mainModule, "recognizeSpeech"):
+                print("main.py missing recognizeSpeech function.")
+                return
+        except ImportError:
+            print("main.py not found.")
+            return
+
+        def speak_feedback(text):
+            if engine:
+                engine.say(text)
+                engine.runAndWait()
+
+        while True:
+            try:
+                mainWindow.after(0, lambda: voiceStatusLabel.config(text="🎤 Voice: Listening", fg="#00ff00"))
+                wakeWord = mainModule.recognizeSpeech()
+                if wakeWord and wakeWord.strip().lower() == "python":
+                    mainWindow.after(0, lambda: voiceStatusLabel.config(text="🎤 Voice: Activated", fg="#ffff00"))
+                    speak_feedback("I'm listening")
+                    
+                    # Accept command after activation
+                    command = mainModule.recognizeSpeech()
+                    if command:
+                        result = processCommand(command, fromVoice=True)
+                        if result == "AI_PROCESSING":
+                            ai_response_thread = threading.Thread(
+                                target=_process_ai_command_in_thread, args=(command, True, engine), daemon=True
+                            )
+                            ai_response_thread.start()
+                        elif "close pyvox" not in command.lower():
+                            threading.Thread(target=lambda: speak_feedback(result), daemon=True).start()
+
+                    # Reset status after interaction
+                    mainWindow.after(0, lambda: voiceStatusLabel.config(text="🎤 Voice: Listening", fg="#00ff00"))
+
+            except Exception as e:
+                print(f"[Voice Error] {str(e)}")
+                time.sleep(2)
+
+
+    # Start voice activation in background thread
+    voiceThread = threading.Thread(target=voiceActivation, daemon=True)
+    voiceThread.start()
+
 
     def chatWithGemini():
         try:
@@ -353,25 +378,33 @@ def mainApp():
                 userInput = tk.Entry(inputFrame, font=("Courier", 12), bg="#2E2E2E", fg="white", insertbackground="white")
                 userInput.pack(side=tk.LEFT, fill=tk.X, expand=True)
                 
+                def _get_gemini_response_in_thread(query, chat_history_widget):
+                    try:
+                        response = mainModule.geminiResponse(query)
+                        if response:
+                            mainWindow.after(0, lambda: _update_chat_history(chat_history_widget, "Gemini", response))
+                        else:
+                            mainWindow.after(0, lambda: _update_chat_history(chat_history_widget, "Gemini", "No response."))
+                    except Exception as e:
+                        mainWindow.after(0, lambda: _update_chat_history(chat_history_widget, "Gemini", f"Error: {str(e)}"))
+
+                def _update_chat_history(chat_history_widget, sender, message):
+                    chat_history_widget.config(state=tk.NORMAL)
+                    chat_history_widget.insert(tk.END, f"{sender}: {message}\n\n")
+                    chat_history_widget.tag_config("You", foreground="#00ffff")
+                    chat_history_widget.tag_config("Gemini", foreground="#ff9900")
+                    chat_history_widget.config(state=tk.DISABLED)
+                    chat_history_widget.see(tk.END)
+
                 def submitQuery(event=None):
                     query = userInput.get().strip()
                     if query:
-                        chatHistory.config(state=tk.NORMAL)
-                        chatHistory.insert(tk.END, f"You: {query}\n")
-                        chatHistory.config(state=tk.DISABLED)
-                        chatHistory.see(tk.END)
+                        _update_chat_history(chatHistory, "You", query)
                         userInput.delete(0, tk.END)
-                        response = mainModule.geminiResponse(query)
-                        if response:
-                            chatHistory.config(state=tk.NORMAL)
-                            chatHistory.insert(tk.END, f"Gemini: {response}\n\n")
-                            chatHistory.config(state=tk.DISABLED)
-                            chatHistory.see(tk.END)
-                        else:
-                            chatHistory.config(state=tk.NORMAL)
-                            chatHistory.insert(tk.END, "Gemini: No response.\n\n")
-                            chatHistory.config(state=tk.DISABLED)
-                            chatHistory.see(tk.END)
+                        # Display "Thinking..." immediately
+                        _update_chat_history(chatHistory, "Gemini", "Thinking...")
+                        # Offload Gemini response to a separate thread
+                        threading.Thread(target=_get_gemini_response_in_thread, args=(query, chatHistory), daemon=True).start()
                     return "break"
                 
                 sendButton = tk.Button(inputFrame, text="Send", command=submitQuery, bg="#2E2E2E", fg="white", activebackground="#3E3E3E", relief="flat", padx=10, pady=5)
