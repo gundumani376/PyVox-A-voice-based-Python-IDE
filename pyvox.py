@@ -1,582 +1,449 @@
 import tkinter as tk
-import time
-from tkinter import ttk, messagebox, filedialog
-from PIL import Image, ImageTk
-import os, sys
-import code
-from io import StringIO
-import io
-import importlib
+from tkinter import ttk, scrolledtext, filedialog, messagebox, font
 import threading
+import subprocess
+import sys
+import os
 import re
+import json
+import time
+from datetime import datetime
+import speech_recognition as sr
+import pyttsx3
+import google.generativeai as genai
+from queue import Queue
+import tempfile
 
-# Global variable to hold AI response thread (optional, for tracking if needed)
-ai_response_thread = None
-
-def mainApp():
-    splash.destroy()
-    mainWindow = tk.Tk()
-    mainWindow.title("PyVox")
-    mainWindow.geometry("1200x900")
-    mainWindow.configure(bg="#070707")
-    
-    # Create main container with horizontal panes
-    mainContainer = tk.PanedWindow(mainWindow, orient=tk.HORIZONTAL, bg="#070707", sashwidth=5, sashrelief=tk.RAISED)
-    mainContainer.pack(fill=tk.BOTH, expand=True)
-    
-    # Left pane for code editor (75% width)
-    leftPane = tk.Frame(mainContainer, bg="#070707")
-    mainContainer.add(leftPane, width=900)
-    
-    # Right pane for chat area (25% width)
-    rightPane = tk.Frame(mainContainer, bg="#404040")
-    mainContainer.add(rightPane, width=300)
-    
-    # Tool bar in left pane
-    toolBar = tk.Frame(leftPane, bg="#070707", bd=0)
-    toolBar.pack(side=tk.TOP, fill=tk.X)
-    
-    # Main text area with line numbers in left pane
-    textFrame = tk.Frame(leftPane, bg="#070707")
-    textFrame.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=5, pady=5)
-    lineNumberAreaText = tk.Text(textFrame, bg="#070707", fg="gray", font=("Courier", 12), width=4, wrap="none", borderwidth=0, highlightthickness=0, state=tk.DISABLED)
-    lineNumberAreaText.pack(side=tk.LEFT, fill=tk.Y)
-    textArea = tk.Text(textFrame, bg="#070707", fg="white", insertbackground="white", font=("Courier", 12), wrap="word", borderwidth=0, highlightthickness=0)
-    textArea.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-    
-    # Output area in left pane
-    outputFrame = tk.Frame(leftPane, bg="#070707")
-    outputFrame.pack(side=tk.BOTTOM, fill=tk.X, padx=5, pady=5)
-    outputLabel = tk.Label(outputFrame, text="Output:", bg="#070707", fg="white", font=("Courier", 10, "bold"), anchor="w")
-    outputLabel.pack(side=tk.TOP, fill=tk.X)
-    outputArea = tk.Text(outputFrame, bg="#1a1a1a", fg="#00ff00", font=("Courier", 10), wrap="word", borderwidth=1, highlightthickness=0, height=8)
-    outputArea.pack(side=tk.TOP, fill=tk.X)
-    outputArea.config(state=tk.DISABLED)
-    
-    # Terminal area in left pane
-    terminalFrame = tk.Frame(leftPane, bg="#070707")
-    terminalFrame.pack(side=tk.BOTTOM, fill=tk.X, padx=5, pady=5)
-    terminalLabel = tk.Label(terminalFrame, text="Python Console:", bg="#070707", fg="white", font=("Courier", 10, "bold"), anchor="w")
-    terminalLabel.pack(side=tk.TOP, fill=tk.X)
-    terminalSubFrame = tk.Frame(terminalFrame, bg="#070707")
-    terminalSubFrame.pack(side=tk.TOP, fill=tk.X)
-    lineNumberAreaTerminal = tk.Text(terminalSubFrame, bg="#070707", fg="gray", font=("Courier", 10), width=4, wrap="none", borderwidth=0, highlightthickness=0, state=tk.DISABLED)
-    lineNumberAreaTerminal.pack(side=tk.LEFT, fill=tk.Y)
-    terminalArea = tk.Text(terminalSubFrame, bg="#0d1117", fg="white", insertbackground="white", font=("Courier", 10), wrap="word", borderwidth=1, highlightthickness=0, height=4)
-    terminalArea.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-    consoleVars = {}
-    console = code.InteractiveConsole(locals=consoleVars)
-    terminalArea.insert(tk.END, ">>> ")
-    terminalArea.config(state=tk.NORMAL)
-    
-    # Chat area in right pane (grey colored)
-    chatLabel = tk.Label(rightPane, text="AI Chat & Voice Commands", bg="#404040", fg="white", font=("Courier", 12, "bold"))
-    chatLabel.pack(side=tk.TOP, fill=tk.X, pady=5)
-    
-    # Status indicator for voice activation
-    statusFrame = tk.Frame(rightPane, bg="#404040")
-    statusFrame.pack(side=tk.TOP, fill=tk.X, padx=5, pady=2)
-    voiceStatusLabel = tk.Label(statusFrame, text="🎤 Voice: Listening", bg="#404040", fg="#00ff00", font=("Courier", 9))
-    voiceStatusLabel.pack(side=tk.LEFT)
-    
-    chatFrame = tk.Frame(rightPane, bg="#404040")
-    chatFrame.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=5, pady=5)
-    
-    # Chat display area
-    chatDisplayFrame = tk.Frame(chatFrame, bg="#404040")
-    chatDisplayFrame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-    chatScrollbar = tk.Scrollbar(chatDisplayFrame, orient=tk.VERTICAL)
-    chatScrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-    chatDisplay = tk.Text(chatDisplayFrame, bg="#2d2d2d", fg="white", font=("Courier", 10), wrap="word", borderwidth=1, highlightthickness=0, yscrollcommand=chatScrollbar.set, state=tk.DISABLED)
-    chatDisplay.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-    chatScrollbar.config(command=chatDisplay.yview)
-    
-    # Chat input area
-    chatInputFrame = tk.Frame(chatFrame, bg="#404040")
-    chatInputFrame.pack(side=tk.BOTTOM, fill=tk.X, pady=5)
-    chatInputLabel = tk.Label(chatInputFrame, text="Type command:", bg="#404040", fg="white", font=("Courier", 9))
-    chatInputLabel.pack(side=tk.TOP, anchor="w")
-    chatInput = tk.Entry(chatInputFrame, bg="#2d2d2d", fg="white", insertbackground="white", font=("Courier", 10))
-    chatInput.pack(side=tk.TOP, fill=tk.X, pady=2)
-    
-    # Add initial message to chat
-    def addChatMessage(sender, message, color="#white"):
-        chatDisplay.config(state=tk.NORMAL)
-        chatDisplay.insert(tk.END, f"{sender}: {message}\n", (sender.lower(),))
-        chatDisplay.tag_config("system", foreground="#ffff00")
-        chatDisplay.tag_config("user", foreground="#00ffff")
-        chatDisplay.tag_config("ai", foreground="#ff9900")
-        chatDisplay.tag_config("voice", foreground="#00ff00")
-        chatDisplay.config(state=tk.DISABLED)
-        chatDisplay.see(tk.END)
-    
-    addChatMessage("System", "PyVox initialized. Say 'python' to activate voice commands.", "#ffff00")
-
-    def updateLineNumbersText(event=None):
-        lineNumberAreaText.config(state=tk.NORMAL)
-        lineNumberAreaText.delete(1.0, tk.END)
-        lineCount = len(textArea.get(1.0, tk.END).split('\n'))
-        for i in range(1, lineCount + 1):
-            lineNumberAreaText.insert(tk.END, f"{i}\n")
-        lineNumberAreaText.config(state=tk.DISABLED)
-        lineNumberAreaText.yview_moveto(textArea.yview()[0])
-
-    def updateLineNumbersTerminal(event=None):
-        lineNumberAreaTerminal.config(state=tk.NORMAL)
-        lineNumberAreaTerminal.delete(1.0, tk.END)
-        lineCount = len(terminalArea.get(1.0, tk.END).split('\n'))
-        for i in range(1, lineCount + 1):
-            lineNumberAreaTerminal.insert(tk.END, f"{i}\n")
-        lineNumberAreaTerminal.config(state=tk.DISABLED)
-        lineNumberAreaTerminal.yview_moveto(terminalArea.yview()[0])
-
-    def syncScrollText(*args):
-        lineNumberAreaText.yview_moveto(textArea.yview()[0])
-
-    def syncScrollTerminal(*args):
-        lineNumberAreaTerminal.yview_moveto(terminalArea.yview()[0])
-
-    textArea.bind("<<Modified>>", updateLineNumbersText)
-    textArea.bind("<MouseWheel>", syncScrollText)
-    textArea.bind("<Button-4>", syncScrollText)
-    textArea.bind("<Button-5>", syncScrollText)
-    terminalArea.bind("<<Modified>>", updateLineNumbersTerminal)
-    terminalArea.bind("<MouseWheel>", syncScrollTerminal)
-    terminalArea.bind("<Button-4>", syncScrollTerminal)
-    terminalArea.bind("<Button-5>", syncScrollTerminal)
-    updateLineNumbersText()
-    updateLineNumbersTerminal()
-
-    def search_file(filename, search_path):
-        for root, _, files in os.walk(search_path):
-            if filename in files:
-                return os.path.join(root, filename)
-        return None
-
-    def displayOutput(output_text):
-        """Display output in the output area"""
-        outputArea.config(state=tk.NORMAL)
-        outputArea.delete(1.0, tk.END)
-        outputArea.insert(tk.END, output_text)
-        outputArea.config(state=tk.DISABLED)
-
-    def processCommand(query, fromVoice=False):
-        queryLower = query.lower().strip()
-        
-        # Add command to chat immediately
-        sender = "Voice" if fromVoice else "User"
-        mainWindow.after(0, lambda: addChatMessage(sender, query))
-        
-        # Immediate commands (no AI interaction, but feedback might need voice)
-        if "run the code" in queryLower or "execute code" in queryLower:
-            runCode()
-            return "Running the code."
-        elif "open saajan" in queryLower:
-            search_path = os.path.expanduser("~")
-            filePath = search_file("saajan.py", search_path)
-            if filePath:
-                try:
-                    with open(filePath, 'r') as f:
-                        content = f.read()
-                    mainWindow.after(0, lambda: textArea.delete(1.0, tk.END))
-                    mainWindow.after(0, lambda: textArea.insert(tk.END, content))
-                    currentFile[0] = filePath
-                    return "File saajan.py opened."
-                except Exception as e:
-                    return f"Failed to open file: {str(e)}"
-            else:
-                return "File saajan.py not found on your computer."
-        elif "open" in queryLower and "file" in queryLower:
-            match = re.search(r'open\s+(.+?)\s+file', queryLower, re.IGNORECASE)
-            if match:
-                fileName = match.group(1).strip()
-                # Use a lambda to defer file dialog to the main thread
-                filePath = mainWindow.tk.call("tk::getOpenFile", "-filetypes", "{{Python files} {.py}} {{All files} {.*}}", "-initialfile", fileName)
-                
-                if filePath:
-                    try:
-                        with open(filePath, 'r') as f:
-                            content = f.read()
-                        mainWindow.after(0, lambda: textArea.delete(1.0, tk.END))
-                        mainWindow.after(0, lambda: textArea.insert(tk.END, content))
-                        currentFile[0] = filePath
-                        return f"File {fileName} opened."
-                    except Exception as e:
-                        return f"Failed to open file: {str(e)}"
-                else:
-                    return "No file selected."
-            else:
-                return "Please specify a valid file name."
-        elif "rewrite line number" in queryLower:
-            match = re.search(r'rewrite line number (\d+)(?: to\s+(.*))?', queryLower, re.IGNORECASE) # Added non-capturing group for 'to'
-            if match:
-                lineNum = int(match.group(1))
-                newContent = match.group(2).strip() if match.group(2) else "" # Get the new content
-                lines = textArea.get(1.0, tk.END).split('\n')
-                if 1 <= lineNum <= len(lines):
-                    lines[lineNum - 1] = newContent
-                    mainWindow.after(0, lambda: textArea.delete(1.0, tk.END))
-                    mainWindow.after(0, lambda: textArea.insert(tk.END, '\n'.join(lines).rstrip('\n')))
-                    mainWindow.after(0, updateLineNumbersText)
-                    return f"Line {lineNum} has been rewritten."
-                else:
-                    return f"Line number {lineNum} is out of range."
-            else:
-                return "Please specify a valid line number and optionally the new content."
-        elif "save the file" in queryLower:
-            if saveFile():
-                return "File saved successfully."
-            else:
-                return "Failed to save file."
-        elif "clear code" in queryLower or "clear editor" in queryLower:
-            mainWindow.after(0, lambda: textArea.delete(1.0, tk.END))
-            return "Code editor cleared."
-        elif "close pyvox" in queryLower:
-            mainWindow.after(0, mainWindow.destroy)
-            return "Closing PyVox."
-        else:
-            # Signal that AI processing is needed
-            return "AI_PROCESSING" 
-
-    def _process_ai_command_in_thread(query, fromVoice, engine=None): # Added engine as an argument
-        # This function runs in a separate thread for AI interaction
-        feedback = ""
-        mainModule = None
+class VoicePythonIDE:
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.title("Voice-Activated Python IDE with Chat")
+        self.root.geometry("1400x900")
+        self.root.configure(bg='#2b2b2b')
+        self.current_file = None
+        self.is_listening = False
+        self.voice_queue = Queue()
+        self.recognizer = sr.Recognizer()
+        self.microphone = sr.Microphone()
+        self.tts_engine = pyttsx3.init()
+        self.tts_engine.setProperty('rate', 150)
+        self.setup_gemini_api()
+        self.setup_gui()
+        self.setup_voice_recognition()
+        self.voice_thread = threading.Thread(target=self.process_voice_commands, daemon=True)
+        self.voice_thread.start()
+    def setup_gemini_api(self):
         try:
-            mainModule = importlib.import_module("main")
-            if not hasattr(mainModule, "geminiResponse"):
-                feedback = "main.py module not found or does not contain geminiResponse function."
-            else:
-                queryLower = query.lower().strip()
-                keyWords = ["code", "program", "write", "script", "function", "class", "method", "generate", "create"]
-                if any(word in queryLower for word in keyWords):
-                    codeResponse = mainModule.geminiResponse(query)
-                    codeBlocks = re.findall(r'```(?:\w*\n)?(.*?)```', codeResponse, re.DOTALL)
-                    if codeBlocks:
-                        code = codeBlocks[0].strip()
-                        mainWindow.after(0, lambda: textArea.delete(1.0, tk.END))
-                        mainWindow.after(0, lambda: textArea.insert(tk.END, code))
-                        feedback = "Code has been generated and added to the editor."
-                        mainWindow.after(0, lambda: displayOutput("Code generated successfully. Click 'Run' to execute."))
-                    else:
-                        # If no code blocks, treat as regular response
-                        mainWindow.after(0, lambda: textArea.delete(1.0, tk.END))
-                        mainWindow.after(0, lambda: textArea.insert(tk.END, codeResponse.strip()))
-                        feedback = "Response has been written in the editor."
-                else:
-                    response = mainModule.geminiResponse(query)
-                    feedback = response
-        except ImportError:
-            feedback = "main.py module not found. Please ensure it exists."
+            api_key = "AIzaSyBwepEkfaQqeTrKKhJuERytq-S2SLLl2Uk"
+            genai.configure(api_key=api_key)
+            self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+            self.gemini_available = True
         except Exception as e:
-            feedback = f"Error processing AI command: {str(e)}"
+            self.gemini_available = False
+            print(f"Gemini API setup failed: {e}")
+    
+    def setup_gui(self):
+        style = ttk.Style()
+        style.theme_use('clam')
+        main_frame = ttk.Frame(self.root)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.setup_toolbar(main_frame)
+        paned_window = ttk.PanedWindow(main_frame, orient=tk.HORIZONTAL)
+        paned_window.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
+        left_panel = ttk.Frame(paned_window)
+        paned_window.add(left_panel, weight=3)
+        right_panel = ttk.Frame(paned_window)
+        paned_window.add(right_panel, weight=1)
+        self.setup_left_panel(left_panel)
+        self.setup_right_panel(right_panel)
+    def setup_toolbar(self, parent):
+        toolbar = ttk.Frame(parent)
+        toolbar.pack(fill=tk.X, pady=(0, 10))
+        ttk.Button(toolbar, text="New", command=self.new_file).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(toolbar, text="Open", command=self.open_file).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(toolbar, text="Save", command=self.save_file).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(toolbar, text="Save As", command=self.save_as_file).pack(side=tk.LEFT, padx=(0, 5))   
+        ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, padx=10, fill=tk.Y)
+        ttk.Button(toolbar, text="Run", command=self.run_code).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(toolbar, text="Clear Terminal", command=self.clear_terminal).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, padx=10, fill=tk.Y)
+        self.voice_status_label = ttk.Label(toolbar, text="Voice: Off", foreground="red")
+        self.voice_status_label.pack(side=tk.LEFT, padx=(0, 10))
+        self.start_voice_btn = ttk.Button(toolbar, text="Start Voice", command=self.start_voice_recognition)
+        self.start_voice_btn.pack(side=tk.LEFT, padx=(0, 5))
+        self.stop_voice_btn = ttk.Button(toolbar, text="Stop Voice", command=self.stop_voice_recognition, state=tk.DISABLED)
+        self.stop_voice_btn.pack(side=tk.LEFT, padx=(0, 5))
+    def setup_left_panel(self, parent):
+        notebook = ttk.Notebook(parent)
+        notebook.pack(fill=tk.BOTH, expand=True)
+        editor_frame = ttk.Frame(notebook)
+        notebook.add(editor_frame, text="Code Editor")
+        editor_container = ttk.Frame(editor_frame)
+        editor_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        line_frame = ttk.Frame(editor_container)
+        line_frame.pack(side=tk.LEFT, fill=tk.Y)
+        self.line_numbers = tk.Text(line_frame, width=4, padx=3, takefocus=0,
+                                   border=0, state='disabled', wrap='none',
+                                   bg='#3c3c3c', fg='#858585', font=('Consolas', 10))
+        self.line_numbers.pack(side=tk.LEFT, fill=tk.Y)
+        self.code_editor = scrolledtext.ScrolledText(
+            editor_container, wrap=tk.NONE, font=('Consolas', 11),
+            bg='#2b2b2b', fg='#ffffff', insertbackground='white',
+            selectbackground='#404040', selectforeground='white'
+        )
+        self.code_editor.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        self.code_editor.bind('<Key>', self.on_code_change)
+        self.code_editor.bind('<Button-1>', self.on_code_change)
+        terminal_frame = ttk.Frame(notebook)
+        notebook.add(terminal_frame, text="Terminal")
+        self.terminal = scrolledtext.ScrolledText(
+            terminal_frame, wrap=tk.WORD, font=('Consolas', 10),
+            bg='#1e1e1e', fg='#00ff00', insertbackground='green'
+        )
+        self.terminal.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.append_to_terminal("Python Voice IDE Terminal Ready\n")
+        self.append_to_terminal("=" * 40 + "\n")
         
-        # Schedule GUI update back on the main thread
-        mainWindow.after(0, lambda: addChatMessage("AI", feedback))
+    def setup_right_panel(self, parent):
+
+        chat_frame = ttk.LabelFrame(parent, text="AI Chat Assistant")
+        chat_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.chat_display = scrolledtext.ScrolledText(
+            chat_frame, wrap=tk.WORD, font=('Arial', 10),
+            bg='#f0f0f0', fg='#333333', height=20
+        )
+        self.chat_display.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        input_frame = ttk.Frame(chat_frame)
+        input_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
         
-        # Provide voice feedback for AI response if from voice command
-        if fromVoice and engine and "close pyvox" not in query.lower():
+        self.chat_input = ttk.Entry(input_frame, font=('Arial', 10))
+        self.chat_input.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        self.chat_input.bind('<Return>', self.send_chat_message)
+        
+        ttk.Button(input_frame, text="Send", command=self.send_chat_message).pack(side=tk.RIGHT)
+        
+        voice_frame = ttk.LabelFrame(parent, text="Voice Status")
+        voice_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        self.voice_status_text = scrolledtext.ScrolledText(
+            voice_frame, wrap=tk.WORD, font=('Arial', 9),
+            bg='#fffacd', fg='#333333', height=8
+        )
+        self.voice_status_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        self.add_chat_message("Assistant", "Hello! I'm your AI coding assistant. I can help you write code, run files, and answer programming questions. Try voice commands like 'write a hello world program' or 'run the file'.")
+        
+    def setup_voice_recognition(self):
+        try:
+            with self.microphone as source:
+                self.recognizer.adjust_for_ambient_noise(source, duration=1)
+            self.voice_status_text.insert(tk.END, "Voice recognition initialized successfully.\n")
+        except Exception as e:
+            self.voice_status_text.insert(tk.END, f"Voice setup error: {e}\n")
+    
+    def on_code_change(self, event=None):
+        def update_line_numbers():
+            self.line_numbers.config(state='normal')
+            self.line_numbers.delete('1.0', tk.END)
+            lines = self.code_editor.get('1.0', tk.END).count('\n')
+            line_numbers_string = "\n".join(str(i) for i in range(1, lines + 1))
+            self.line_numbers.insert('1.0', line_numbers_string)
+            self.line_numbers.config(state='disabled')
+        self.root.after_idle(update_line_numbers)
+    
+    def new_file(self):
+        if messagebox.askyesno("New File", "Clear current editor content?"):
+            self.code_editor.delete('1.0', tk.END)
+            self.current_file = None
+            self.root.title("Voice-Activated Python IDE - New File")
+    def open_file(self):
+        file_path = filedialog.askopenfilename(
+            title="Open Python File",
+            filetypes=[("Python files", "*.py"), ("All files", "*.*")]
+        )
+        if file_path:
             try:
-                engine.say(feedback)
-                engine.runAndWait()
+                with open(file_path, 'r', encoding='utf-8') as file:
+                    content = file.read()
+                    self.code_editor.delete('1.0', tk.END)
+                    self.code_editor.insert('1.0', content)
+                    self.current_file = file_path
+                    self.root.title(f"Voice-Activated Python IDE - {os.path.basename(file_path)}")
+                    self.add_chat_message("System", f"Opened file: {os.path.basename(file_path)}")
             except Exception as e:
-                print(f"Error speaking AI feedback: {e}")
-
-
-    def handleChatInput(event):
-        command = chatInput.get().strip()
-        if command:
-            chatInput.delete(0, tk.END)
-            # Process immediate commands first
-            result = processCommand(command, fromVoice=False)
-            if result == "AI_PROCESSING":
-                # If AI processing is needed, offload to a thread
-                threading.Thread(target=_process_ai_command_in_thread, args=(command, False), daemon=True).start()
-            else:
-                # For immediate commands, update chat directly
-                mainWindow.after(0, lambda: addChatMessage("AI", result))
-        return "break"
-
-    chatInput.bind("<Return>", handleChatInput)
-
-    def voiceActivation():
-        global ai_response_thread
-        import pyttsx3
-        import time
-        import importlib
-
-        try:
-            engine = pyttsx3.init()
-            voices = engine.getProperty('voices')
-            if voices:
-                engine.setProperty('voice', voices[0].id)
-            engine.setProperty('rate', 150)
-        except ImportError:
-            print("pyttsx3 not available.")
-            engine = None
-
-        try:
-            mainModule = importlib.import_module("main")
-            if not hasattr(mainModule, "recognizeSpeech"):
-                print("main.py missing recognizeSpeech function.")
-                return
-        except ImportError:
-            print("main.py not found.")
+                messagebox.showerror("Error", f"Could not open file: {e}")
+    
+    def save_file(self):
+        if self.current_file:
+            try:
+                content = self.code_editor.get('1.0', tk.END + '-1c')
+                with open(self.current_file, 'w', encoding='utf-8') as file:
+                    file.write(content)
+                self.add_chat_message("System", f"Saved file: {os.path.basename(self.current_file)}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Could not save file: {e}")
+        else:
+            self.save_as_file()
+    def save_as_file(self):
+        file_path = filedialog.asksaveasfilename(
+            title="Save Python File",
+            defaultextension=".py",
+            filetypes=[("Python files", "*.py"), ("All files", "*.*")]
+        )
+        if file_path:
+            try:
+                content = self.code_editor.get('1.0', tk.END + '-1c')
+                with open(file_path, 'w', encoding='utf-8') as file:
+                    file.write(content)
+                self.current_file = file_path
+                self.root.title(f"Voice-Activated Python IDE - {os.path.basename(file_path)}")
+                self.add_chat_message("System", f"Saved file as: {os.path.basename(file_path)}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Could not save file: {e}")
+    
+    def run_code(self):
+        code = self.code_editor.get('1.0', tk.END + '-1c')
+        if not code.strip():
+            self.append_to_terminal("No code to run.\n")
             return
+        self.append_to_terminal(f"\n{'='*40}\n")
+        self.append_to_terminal(f"Running code at {datetime.now().strftime('%H:%M:%S')}\n")
+        self.append_to_terminal(f"{'='*40}\n")
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as temp_file:
+                temp_file.write(code)
+                temp_file_path = temp_file.name
+            threading.Thread(target=self._execute_code, args=(temp_file_path,), daemon=True).start()           
+        except Exception as e:
+            self.append_to_terminal(f"Error creating temporary file: {e}\n")
+    def _execute_code(self, file_path):
+        try:
+            result = subprocess.run(
+                [sys.executable, file_path],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            if result.stdout:
+                self.append_to_terminal(f"Output:\n{result.stdout}\n")
+            if result.stderr:
+                self.append_to_terminal(f"Errors:\n{result.stderr}\n")
+            self.append_to_terminal(f"Process finished with return code: {result.returncode}\n")
+        except subprocess.TimeoutExpired:
+            self.append_to_terminal("Execution timed out (30 seconds limit).\n")
+        except Exception as e:
+            self.append_to_terminal(f"Execution error: {e}\n")
+        finally:
+            try:
+                os.unlink(file_path)
+            except:
+                pass
+    def clear_terminal(self):
+        self.terminal.delete('1.0', tk.END)
+        self.append_to_terminal("Terminal cleared.\n")
 
-        def speak_feedback(text):
-            if engine:
-                engine.say(text)
-                engine.runAndWait()
+    def append_to_terminal(self, text):
+        def _append():
+            self.terminal.insert(tk.END, text)
+            self.terminal.see(tk.END)
+        
+        self.root.after(0, _append)
+    
+    def start_voice_recognition(self):
+        if not self.is_listening:
+            self.is_listening = True
+            self.start_voice_btn.config(state=tk.DISABLED)
+            self.stop_voice_btn.config(state=tk.NORMAL)
+            self.voice_status_label.config(text="Voice: Listening", foreground="green")
 
+            threading.Thread(target=self.continuous_voice_recognition, daemon=True).start()
+            self.voice_status_text.insert(tk.END, "Voice recognition started. Say commands like:\n")
+            self.voice_status_text.insert(tk.END, "- 'write a hello world program'\n")
+            self.voice_status_text.insert(tk.END, "- 'run the file'\n")
+            self.voice_status_text.insert(tk.END, "- 'save the file'\n")
+            self.voice_status_text.insert(tk.END, "- 'clear terminal'\n\n")
+    
+    def stop_voice_recognition(self):
+        self.is_listening = False
+        self.start_voice_btn.config(state=tk.NORMAL)
+        self.stop_voice_btn.config(state=tk.DISABLED)
+        self.voice_status_label.config(text="Voice: Off", foreground="red")
+        self.voice_status_text.insert(tk.END, "Voice recognition stopped.\n\n")
+    
+    def continuous_voice_recognition(self):
+        while self.is_listening:
+            try:
+                with self.microphone as source:
+                    self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
+                    audio = self.recognizer.listen(source, timeout=1, phrase_time_limit=5)
+                
+                try:
+                    text = self.recognizer.recognize_google(audio).lower()
+                    if text:
+                        self.voice_queue.put(text)
+                        self.root.after(0, lambda: self.voice_status_text.insert(tk.END, f"Heard: {text}\n"))
+                        
+                except sr.UnknownValueError:
+                    pass  
+                except sr.RequestError as e:
+                    self.root.after(0, lambda: self.voice_status_text.insert(tk.END, f"Recognition error: {e}\n"))
+                    
+            except sr.WaitTimeoutError:
+                pass 
+            except Exception as e:
+                self.root.after(0, lambda: self.voice_status_text.insert(tk.END, f"Voice error: {e}\n"))
+                time.sleep(1)
+    
+    def process_voice_commands(self):
         while True:
             try:
-                mainWindow.after(0, lambda: voiceStatusLabel.config(text="🎤 Voice: Listening", fg="#00ff00"))
-                wakeWord = mainModule.recognizeSpeech()
-                if wakeWord and wakeWord.strip().lower() == "python":
-                    mainWindow.after(0, lambda: voiceStatusLabel.config(text="🎤 Voice: Activated", fg="#ffff00"))
-                    speak_feedback("I'm listening")
-                    
-                    # Accept command after activation
-                    command = mainModule.recognizeSpeech()
-                    if command:
-                        result = processCommand(command, fromVoice=True)
-                        if result == "AI_PROCESSING":
-                            ai_response_thread = threading.Thread(
-                                target=_process_ai_command_in_thread, args=(command, True, engine), daemon=True
-                            )
-                            ai_response_thread.start()
-                        elif "close pyvox" not in command.lower():
-                            threading.Thread(target=lambda: speak_feedback(result), daemon=True).start()
-
-                    # Reset status after interaction
-                    mainWindow.after(0, lambda: voiceStatusLabel.config(text="🎤 Voice: Listening", fg="#00ff00"))
-
+                if not self.voice_queue.empty():
+                    command = self.voice_queue.get()
+                    self.root.after(0, lambda cmd=command: self.handle_voice_command(cmd))
+                time.sleep(0.1)
             except Exception as e:
-                print(f"[Voice Error] {str(e)}")
-                time.sleep(2)
-
-
-    # Start voice activation in background thread
-    voiceThread = threading.Thread(target=voiceActivation, daemon=True)
-    voiceThread.start()
-
-
-    def chatWithGemini():
-        try:
-            mainModule = importlib.import_module("main")
-            if hasattr(mainModule, "geminiResponse"):
-                chatDialog = tk.Toplevel(mainWindow)
-                chatDialog.title("Extended Chat with Gemini")
-                chatDialog.geometry("800x600")
-                chatDialog.configure(bg="#070707")
-                tk.Label(chatDialog, text="Gemini Extended Chat", bg="#070707", fg="white", font=("Courier", 14)).pack(pady=5)
-                chatHistory = tk.Text(chatDialog, height=25, bg="#2E2E2E", fg="white", font=("Courier", 11), wrap="word", state=tk.DISABLED)
-                chatHistory.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
-                inputFrame = tk.Frame(chatDialog, bg="#070707")
-                inputFrame.pack(fill=tk.X, padx=10, pady=10)
-                userInput = tk.Entry(inputFrame, font=("Courier", 12), bg="#2E2E2E", fg="white", insertbackground="white")
-                userInput.pack(side=tk.LEFT, fill=tk.X, expand=True)
-                
-                def _get_gemini_response_in_thread(query, chat_history_widget):
-                    try:
-                        response = mainModule.geminiResponse(query)
-                        if response:
-                            mainWindow.after(0, lambda: _update_chat_history(chat_history_widget, "Gemini", response))
-                        else:
-                            mainWindow.after(0, lambda: _update_chat_history(chat_history_widget, "Gemini", "No response."))
-                    except Exception as e:
-                        mainWindow.after(0, lambda: _update_chat_history(chat_history_widget, "Gemini", f"Error: {str(e)}"))
-
-                def _update_chat_history(chat_history_widget, sender, message):
-                    chat_history_widget.config(state=tk.NORMAL)
-                    chat_history_widget.insert(tk.END, f"{sender}: {message}\n\n")
-                    chat_history_widget.tag_config("You", foreground="#00ffff")
-                    chat_history_widget.tag_config("Gemini", foreground="#ff9900")
-                    chat_history_widget.config(state=tk.DISABLED)
-                    chat_history_widget.see(tk.END)
-
-                def submitQuery(event=None):
-                    query = userInput.get().strip()
-                    if query:
-                        _update_chat_history(chatHistory, "You", query)
-                        userInput.delete(0, tk.END)
-                        # Display "Thinking..." immediately
-                        _update_chat_history(chatHistory, "Gemini", "Thinking...")
-                        # Offload Gemini response to a separate thread
-                        threading.Thread(target=_get_gemini_response_in_thread, args=(query, chatHistory), daemon=True).start()
-                    return "break"
-                
-                sendButton = tk.Button(inputFrame, text="Send", command=submitQuery, bg="#2E2E2E", fg="white", activebackground="#3E3E3E", relief="flat", padx=10, pady=5)
-                sendButton.pack(side=tk.RIGHT, padx=5)
-                userInput.bind("<Return>", submitQuery)
-            else:
-                messagebox.showerror("Error", "main.py does not have the geminiResponse function.")
-        except Exception as e:
-            messagebox.showerror("Error", f"Chat failed:\n{e}")
-
-    def handleTerminalInput(event):
-        if event.keysym == "Return":
-            terminalArea.config(state=tk.NORMAL)
-            content = terminalArea.get(1.0, tk.END).rstrip().split('\n')
-            lastPromptIndex = -1
-            for i in range(len(content)-1, -1, -1):
-                if content[i].startswith(">>> ") or content[i].startswith("... "):
-                    lastPromptIndex = i
-                    break
-            if lastPromptIndex == -1:
-                lastPromptIndex = 0
-            commandLines = content[lastPromptIndex:]
-            command = "\n".join(line.replace(">>> ", "").replace("... ", "") for line in commandLines if line.strip()).strip()
-            if command:
-                oldStdout = sys.stdout
-                redirectedOutput = io.StringIO()
-                sys.stdout = redirectedOutput
-                try:
-                    more = console.push(command)
-                    output = redirectedOutput.getvalue()
-                    if output:
-                        terminalArea.insert(tk.END, output)
-                    if more:
-                        terminalArea.insert(tk.END, "... ")
-                    else:
-                        terminalArea.insert(tk.END, "\n>>> ")
-                    updateLineNumbersTerminal()
-                except Exception as e:
-                    terminalArea.insert(tk.END, f"Error: {str(e)}\n>>> ")
-                    updateLineNumbersTerminal()
-                finally:
-                    sys.stdout = oldStdout
-                    redirectedOutput.close()
-            else:
-                terminalArea.insert(tk.END, "\n>>> ")
-                updateLineNumbersTerminal()
-            terminalArea.see(tk.END)
-            return "break"
-
-    terminalArea.bind("<Return>", handleTerminalInput)
-    currentFile = [None]
-
-    def createNewFile():
-        filePath = filedialog.asksaveasfilename(defaultextension=".py", filetypes=[("Python files", "*.py"), ("All files", "*.*")], title="Create New Python File")
-        if filePath:
-            try:
-                with open(filePath, 'w') as f:
-                    f.write("# New Python Script\n\n")
-                textArea.delete(1.0, tk.END)
-                textArea.insert(tk.END, "# New Python Script\n\n")
-                currentFile[0] = filePath
-                messagebox.showinfo("Success", f"New file created at:\n{filePath}")
-                addChatMessage("System", f"New file created: {os.path.basename(filePath)}")
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to create file:\n{e}")
-
-    def saveFile():
-        if currentFile[0]:
-            try:
-                with open(currentFile[0], 'w') as f:
-                    f.write(textArea.get(1.0, tk.END).rstrip('\n') + '\n')
-                messagebox.showinfo("Success", f"File saved at:\n{currentFile[0]}")
-                addChatMessage("System", f"File saved: {os.path.basename(currentFile[0])}")
-                return True
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to save file:\n{e}")
-                return False
-        else:
-            filePath = filedialog.asksaveasfilename(defaultextension=".py", filetypes=[("Python files", "*.py"), ("All files", "*.*")], title="Save Python File")
-            if filePath:
-                try:
-                    with open(filePath, 'w') as f:
-                        f.write(textArea.get(1.0, tk.END).rstrip('\n') + '\n')
-                    currentFile[0] = filePath
-                    messagebox.showinfo("Success", f"File saved at:\n{filePath}")
-                    addChatMessage("System", f"File saved: {os.path.basename(filePath)}")
-                    return True
-                except Exception as e:
-                    messagebox.showerror("Error", f"Failed to save file:\n{e}")
-                    return False
-        return False
-
-    def openFile():
-        filePath = filedialog.askopenfilename(filetypes=[("Python files", "*.py"), ("All files", "*.*")], title="Open Python File")
-        if filePath:
-            try:
-                with open(filePath, 'r') as f:
-                    content = f.read()
-                textArea.delete(1.0, tk.END)
-                textArea.insert(tk.END, content)
-                currentFile[0] = filePath
-                messagebox.showinfo("Success", f"File opened:\n{filePath}")
-                addChatMessage("System", f"File opened: {os.path.basename(filePath)}")
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to open file:\n{e}")
-
-    def runCode():
-        oldStdout = sys.stdout
-        redirectedOutput = StringIO()
-        sys.stdout = redirectedOutput
-        try:
-            codeStr = textArea.get(1.0, tk.END).rstrip('\n')
-            if not codeStr.strip():
-                output = "No code to execute."
-            else:
-                exec(codeStr, {})
-                output = redirectedOutput.getvalue()
-                if not output:
-                    output = "Code executed successfully. No output produced."
-        except Exception as e:
-            output = f"Error: {str(e)}"
-        finally:
-            sys.stdout = oldStdout
-            redirectedOutput.close()
-        
-        # Display output in the output area
-        displayOutput(output)
-        addChatMessage("System", "Code executed. Check output area below.")
-
-    # Toolbar buttons
-    runButton = tk.Button(toolBar, text="▶ Run", command=runCode, bg="#2E2E2E", fg="white", activebackground="#3E3E3E", relief="flat", padx=15, pady=8, font=("Courier", 10, "bold"))
-    runButton.pack(side=tk.LEFT, padx=2)
-    saveButton = tk.Button(toolBar, text="💾 Save", command=saveFile, bg="#2E2E2E", fg="white", activebackground="#3E3E3E", relief="flat", padx=15, pady=8, font=("Courier", 10))
-    saveButton.pack(side=tk.LEFT, padx=2)
-    openFileButton = tk.Button(toolBar, text="📁 Open", command=openFile, bg="#2E2E2E", fg="white", activebackground="#3E3E3E", relief="flat", padx=15, pady=8, font=("Courier", 10))
-    openFileButton.pack(side=tk.LEFT, padx=2)
-    newFileButton = tk.Button(toolBar, text="📄 New", command=createNewFile, bg="#2E2E2E", fg="white", activebackground="#3E3E3E", relief="flat", padx=15, pady=8, font=("Courier", 10))
-    newFileButton.pack(side=tk.LEFT, padx=2)
-    chatButton = tk.Button(toolBar, text="💬 Extended Chat", command=chatWithGemini, bg="#2E2E2E", fg="white", activebackground="#3E3E3E", relief="flat", padx=15, pady=8, font=("Courier", 10))
-    chatButton.pack(side=tk.LEFT, padx=2)
-    aboutButton = tk.Button(toolBar, text="ℹ About", command=lambda: messagebox.showinfo("About", "PyVox - AI-Powered Voice Code Editor\nVersion 2.0\n\nFeatures:\n• Voice activation with 'python' keyword\n• AI code generation\n• Integrated chat interface\n• Python console\n• Real-time output display"), bg="#2E2E2E", fg="white", activebackground="#3E3E3E", relief="flat", padx=15, pady=8, font=("Courier", 10))
-    aboutButton.pack(side=tk.RIGHT, padx=2)
+                print(f"Voice processing error: {e}")
     
-    mainWindow.mainloop()
+    def handle_voice_command(self, command):
+        command = command.lower().strip()
+        self.add_chat_message("You", command) 
+        code_generation_phrases = [
+            "write a program", "write code", "create a program", "generate code",
+            "python code", "code for", "make a program", "develop a program",
+            "script for", "show me code", "give me a function", "write a function",
+            "program to", "how to write", "can you code", "build a script",
+            "generate python", "write a script"
+        ]
 
-# Splash screen
-splash = tk.Tk()
-splash.title("PyVox")
-windowWidth = 675
-windowHeight = 672
-screenWidth = splash.winfo_screenwidth()
-screenHeight = splash.winfo_screenheight()
-x = int((screenWidth/2) - (windowWidth/2))
-y = int((screenHeight/2) - (windowHeight/2))
-splash.geometry(f"{windowWidth}x{windowHeight}+{x}+{y}")
-splash.overrideredirect(True)
-splashFrame = ttk.Frame(splash)
-splashFrame.pack(expand=True, fill=tk.BOTH)
+        # File operations
+        if "run the file" in command or "execute the code" in command:
+            self.run_code()
+            self.add_chat_message("System", "Running the code...")
+            
+        elif "save the file" in command or "save file" in command:
+            self.save_file()
+            
+        elif "open file" in command:
+            self.open_file()
+            
+        elif "new file" in command:
+            self.new_file()
+            
+        elif "clear terminal" in command:
+            self.clear_terminal()
 
-try:
-    img = Image.open("banner.png")
-    img = img.resize((windowWidth, windowHeight))
-    bannerImage = ImageTk.PhotoImage(img)
-    splash.bannerImage = bannerImage
-    bannerLabel = tk.Label(splashFrame, image=bannerImage)
-    bannerLabel.pack(expand=True)
-except Exception as e:
-    # Create a simple text splash if banner image not found
-    splashLabel = tk.Label(splashFrame, text="PyVox\nAI-Powered Voice Code Editor\n\nLoading...", 
-                          font=("Courier", 20, "bold"), bg="#070707", fg="white")
-    splashLabel.pack(expand=True)
-    splash.configure(bg="#070707")
+        elif any(phrase in command for phrase in code_generation_phrases):
+            self.handle_code_generation_request(command)
+        else:
+            self.process_chat_command(command, is_voice_command=True) 
+    
+    def handle_code_generation_request(self, command):
+        
+        if self.gemini_available:
+            try:
+               
+                prompt = f"""You are a Python code generator. The user said: "{command}" """
+                response = self.gemini_model.generate_content(prompt)
+                raw_code_output = response.text.strip()
+                code = raw_code_output
+                match = re.search(r"```(?:python)?\s*(.*?)(?:```|$)", raw_code_output, re.DOTALL)
+                if match:
+                    code = match.group(1).strip()
+                else:
+                    common_prefixes = ["here is the code:", "here's the code:", "python code:"]
+                    for prefix in common_prefixes:
+                        if code.lower().startswith(prefix):
+                            code = code[len(prefix):].strip()
+                self.code_editor.delete('1.0', tk.END)
+                self.code_editor.insert('1.0', code)
 
-splash.after(4000, mainApp)
-splash.mainloop()
+                self.add_chat_message("Assistant", f"I've generated the code based on your request: '{command}'. The code has been added to the editor.")
+                
+            except Exception as e:
+                self.add_chat_message("Assistant", f"Sorry, I couldn't generate the code using Gemini API. Error: {e}")
+        else:
+            self.add_chat_message("Assistant", "Gemini API is not configured. Falling back to template generation.")
+    
+    def process_chat_command(self, command, is_voice_command=False):
+        command = command.lower().strip() 
+        if not is_voice_command: 
+            self.add_chat_message("You", command)
+
+        code_generation_phrases = [
+            "write a program", "write code", "create a program", "generate code",
+            "python code", "code for", "make a program", "develop a program",
+            "script for", "show me code", "give me a function", "write a function",
+            "program to", "how to write", "can you code", "build a script",
+            "generate python", "write a script"
+        ]
+
+        if "run the file" in command or "execute the code" in command:
+            self.run_code()
+            self.add_chat_message("System", "Running the code...")
+            
+        elif "save the file" in command or "save file" in command:
+            self.save_file()
+            
+        elif "open file" in command:
+            self.open_file()
+            
+        elif "new file" in command:
+            self.new_file()
+            
+        elif "clear terminal" in command:
+            self.clear_terminal()
+
+        elif any(phrase in command for phrase in code_generation_phrases):
+            self.handle_code_generation_request(command)
+            
+        else:
+
+            if self.gemini_available:
+                try:
+                    prompt = f"""You are a helpful Python programming assistant. The user said: "{command}" ."""
+                    response = self.gemini_model.generate_content(prompt)
+                    self.add_chat_message("Assistant", response.text)
+                except Exception as e:
+                    self.add_chat_message("Assistant", f"Sorry, I encountered an error: {e}")
+            else:
+                responses = {
+                    "hello": "Hello! I'm your Python coding assistant. How can I help you today?",
+                    "help": "I can help you with Python programming. Try commands like 'write a hello world program' or ask programming questions.",
+                    "what can you do": "I can generate Python code, run your programs, save files, and answer programming questions.",
+                }
+                response = "I'm here to help with Python programming. Ask me to write code or run your programs!"
+                for key, value in responses.items():
+                    if key in command:
+                        response = value
+                        break
+                self.add_chat_message("Assistant", response)
+    def send_chat_message(self, event=None):
+        message = self.chat_input.get().strip()
+        if message:
+            self.chat_input.delete(0, tk.END)
+            self.process_chat_command(message)
+    
+    def add_chat_message(self, sender, message):
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.chat_display.insert(tk.END, f"[{timestamp}] {sender}: {message}\n\n")
+        self.chat_display.see(tk.END)
+    
+    def run(self):
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self.root.mainloop()
+    
+    def on_closing(self):
+        self.is_listening = False
+        self.root.quit()
+        self.root.destroy()
+
+if __name__ == "__main__":  
+    print("Starting Voice-Activated Python IDE...")
+    
+    try:
+        app = VoicePythonIDE()
+        app.run()
+    except Exception as e:
+        print(f"Error starting application: {e}")
+        input("Press Enter to exit...")
