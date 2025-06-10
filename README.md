@@ -2,8 +2,6 @@
 
 PyVox is a powerful voice-controlled Python IDE built using Tkinter, Speech Recognition, and Google's Gemini API. It combines hands-free coding with AI-assisted development, allowing you to write, run, and manage Python code using voice commands or text chat.
 
-![PyVox Screenshot](https://via.placeholder.com/1000x600.png?text=PyVox+IDE) <!-- Replace with actual screenshot if available -->
-
 ---
 
 ## ✨ Features
