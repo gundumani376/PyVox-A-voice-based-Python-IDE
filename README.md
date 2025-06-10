@@ -13,6 +13,8 @@ PyVox is a powerful voice-controlled Python IDE built using Tkinter, Speech Reco
 - 🗂️ **File Operations**: New, open, save, and save-as features for working with local `.py` files.
 - 📦 **Multi-threaded Voice & Execution**: Keeps the UI responsive while listening or executing code in the background.
 
+- And the most important thing, pls don't forget to add your gemini API key
+
 ---
 
 ## 🔧 Requirements
@@ -24,6 +26,7 @@ PyVox is a powerful voice-controlled Python IDE built using Tkinter, Speech Reco
   pip install -r requirements.txt
 
 Clone this repository using : git clone https://github.com/saaj376/PyVox-A-voice-based-Python-IDE.git
+
 
 
 ![image](https://github.com/user-attachments/assets/604b1cc3-6b53-40c7-aa18-fe2443b6ee4d)
