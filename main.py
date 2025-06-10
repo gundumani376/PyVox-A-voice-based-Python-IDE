@@ -3,7 +3,7 @@ import requests
 import time
 import re
 
-def recognizespeech():
+def recognizeSpeech():
     import speech_recognition as sr
     recognizer=sr.Recognizer()
     with sr.Microphone() as source:
@@ -23,7 +23,7 @@ def recognizespeech():
             print("Error with speech recognition service; {0}".format(e))
             return None
 
-def geminiresponse(text, code_only=False):
+def geminiResponse(text, code_only=False):
     try:
         prompt = text
         if code_only:
@@ -57,7 +57,7 @@ def geminiresponse(text, code_only=False):
         print(errors.get(status, f"Error: {e}"))
         if status==429:
             time.sleep(5)
-            return geminiresponse(text)
+            return geminiResponse(text)
         return "API error"
     except requests.exceptions.RequestException as e:
         print(f"Error: {e}")
@@ -71,16 +71,16 @@ def speak_text(text):
 def main():
     print("Say 'python' to activate at any time...")
     while True:
-        wakeword=recognizespeech()
+        wakeword=recognizeSpeech()
         if wakeword and wakeword.lower().strip()=="python":
             speak_text("Python activated. Please speak your query.")
-            inputtext=recognizespeech()
+            inputtext=recognizeSpeech()
             if inputtext:
-                gemini_response=geminiresponse(inputtext)
+                gemini_response=geminiResponse(inputtext)
                 if gemini_response:
                     speak_text(gemini_response)
         print("Listening for 'python' or say 'exit' to stop...")
-        continue_response=recognizespeech()
+        continue_response=recognizeSpeech()
         if continue_response and "exit" in continue_response.lower():
             speak_text("Goodbye")
             break
