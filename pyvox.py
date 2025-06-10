@@ -34,7 +34,7 @@ class VoicePythonIDE:
         self.voice_thread.start()
     def setup_gemini_api(self):
         try:
-            api_key = "AIzaSyBwepEkfaQqeTrKKhJuERytq-S2SLLl2Uk"
+            api_key = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
             genai.configure(api_key=api_key)
             self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
             self.gemini_available = True
